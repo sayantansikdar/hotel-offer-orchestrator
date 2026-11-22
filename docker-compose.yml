@@ -1,0 +1,75 @@
+name: hotel-offer-orchestrator
+
+x-app-env: &app-env
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  SUPPLIER_BASE_URL: http://api:3000
+  TEMPORAL_ADDRESS: temporal:7233
+  TEMPORAL_NAMESPACE: default
+  TEMPORAL_TASK_QUEUE: hotel-offers
+  REDIS_URL: redis://redis:6379
+  CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
+  PARTIAL_CACHE_TTL_SECONDS: ${PARTIAL_CACHE_TTL_SECONDS:-30}
+
+services:
+  api:
+    build: .
+    image: hotel-offer-orchestrator:latest
+    environment:
+      <<: *app-env
+      SERVICE_NAME: api
+      PORT: 3000
+      SUPPLIER_A_DOWN: ${SUPPLIER_A_DOWN:-false}
+      SUPPLIER_B_DOWN: ${SUPPLIER_B_DOWN:-false}
+    ports:
+      - "${API_PORT:-3000}:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    image: hotel-offer-orchestrator:latest
+    command: ["node", "dist/temporal/worker.js"]
+    environment:
+      <<: *app-env
+      SERVICE_NAME: worker
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+    restart: unless-stopped
+
+  temporal:
+    # Single-binary Temporal dev server (SQLite, in-memory by default) with the Web UI.
+    image: temporalio/temporal:1.10.1
+    command: ["server", "start-dev", "--ip", "0.0.0.0", "--ui-ip", "0.0.0.0"]
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "127.0.0.1:7233"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
