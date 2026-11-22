@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: hotel-offer-orchestrator
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./deploy/Dockerfile.all-in-one
+    dockerContext: .
+    autoDeploy: true
+    envVars:
+      - key: LOG_LEVEL
+        value: info
+      - key: CACHE_TTL_SECONDS
+        value: "300"
+      - key: PARTIAL_CACHE_TTL_SECONDS
+        value: "30"
