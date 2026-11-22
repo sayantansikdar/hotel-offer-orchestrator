@@ -64,10 +64,42 @@ function toast(message) {
 
 /* ---------- Health ---------- */
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Waits until the API answers with its own JSON. While a free-tier instance
+ * wakes up, the platform can return error pages without CORS headers, which
+ * the browser reports as network errors, so keep retrying for a while.
+ */
+async function waitForApi(maxMs = 150000) {
+  const pill = $('#status-pill');
+  const deadline = Date.now() + maxMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    try {
+      const { data } = await api('/health', { timeoutMs: 30000 });
+      if (data && typeof data === 'object' && data.status) return true;
+    } catch {
+      // not awake yet
+    }
+    attempt += 1;
+    pill.dataset.state = 'loading';
+    $('.status-pill__text', pill).textContent = 'Waking server…';
+    $('#wake').hidden = false;
+    await sleep(Math.min(2000 + attempt * 1000, 6000));
+  }
+  $('#wake').hidden = true;
+  return false;
+}
+
+let healthRetry;
+
 async function refreshHealth() {
   const pill = $('#status-pill');
+  clearTimeout(healthRetry);
   try {
     const { data } = await api('/health');
+    if (!data || typeof data !== 'object' || !data.status) throw new Error('not ready');
     const labels = { ok: 'All systems normal', degraded: 'Degraded', down: 'Unavailable' };
     pill.dataset.state = data.status;
     $('.status-pill__text', pill).textContent = labels[data.status] ?? data.status;
@@ -88,8 +120,10 @@ async function refreshHealth() {
       status.textContent = health.status === 'up' ? `Online · ${health.latencyMs} ms` : 'Offline';
     }
   } catch {
-    pill.dataset.state = 'down';
-    $('.status-pill__text', pill).textContent = 'API unreachable';
+    // Most likely the instance is waking up; check again soon rather than in 30 s.
+    pill.dataset.state = 'loading';
+    $('.status-pill__text', pill).textContent = 'Reconnecting…';
+    healthRetry = setTimeout(refreshHealth, 4000);
   }
 }
 
@@ -234,7 +268,12 @@ async function search(event) {
     renderOffers(data, { A: a, B: b });
     if (workflowId) await refreshRuns({ select: workflowId });
   } catch {
-    showBanner('error', '<span><strong>Could not reach the API.</strong> It may still be waking up; try again in a moment.</span>');
+    // Network error: wait for the API to wake, then retry this search once.
+    if (!event?.retried && (await waitForApi())) {
+      button.removeAttribute('aria-busy');
+      return search({ retried: true, preventDefault() {} });
+    }
+    showBanner('error', '<span><strong>Could not reach the API.</strong> Please try again in a moment.</span>');
   } finally {
     button.removeAttribute('aria-busy');
   }
@@ -411,7 +450,8 @@ $('#api-link').href = `${API}/api/hotels?city=delhi`;
 $('#health-link').href = `${API}/health`;
 
 syncThumb();
-refreshHealth().then(async () => {
+waitForApi().then(async () => {
+  await refreshHealth();
   await search();
   if (!selectedRun) await refreshRuns();
 });
