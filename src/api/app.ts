@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { logger } from '../lib/logger';
 import { supplierRouter } from '../suppliers/router';
 import { checkHealth, type HealthDeps } from './health';
+import { getWorkflowRun, isHotelOffersWorkflowId, listWorkflowRuns } from './workflow-runs';
 import { AllSuppliersUnavailableError, CacheUnavailableError, type HotelOffersService, type OffersResponse } from './hotel-offers-service';
 
 const price = z.coerce.number({ error: 'must be a number' }).finite().nonnegative('must be 0 or more');
@@ -25,7 +26,11 @@ const hotelsQuery = z
 
 export interface AppDeps extends HealthDeps {
   hotelOffers: HotelOffersService;
+  /** Origins allowed to call the API from a browser; ['*'] allows any. */
+  corsOrigins?: string[];
 }
+
+const runsQuery = z.object({ limit: z.coerce.number().int().min(1).max(50).default(20) });
 
 function setOffersHeaders(res: Response, result: OffersResponse): void {
   res.setHeader('X-Cache', result.cache);
@@ -45,6 +50,23 @@ export function createApp(deps: AppDeps): express.Express {
       customLogLevel: (_req, res, err) => (err || res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info'),
     }),
   );
+
+  const corsOrigins = deps.corsOrigins ?? ['*'];
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && (corsOrigins.includes('*') || corsOrigins.includes(origin))) {
+      res.setHeader('Access-Control-Allow-Origin', corsOrigins.includes('*') ? '*' : origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Expose-Headers', 'X-Cache, X-Workflow-Id, X-Suppliers-Unavailable');
+      res.setHeader('Access-Control-Max-Age', '600');
+    }
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(204);
+      return;
+    }
+    next();
+  });
 
   app.use(supplierRouter());
 
@@ -66,6 +88,29 @@ export function createApp(deps: AppDeps): express.Express {
 
     setOffersHeaders(res, result);
     res.json(result.offers);
+  });
+
+  app.get('/api/workflows', async (req, res) => {
+    const parsed = runsQuery.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'limit must be an integer between 1 and 50' });
+      return;
+    }
+    res.json(await listWorkflowRuns(deps.client, parsed.data.limit));
+  });
+
+  app.get('/api/workflows/:workflowId', async (req, res) => {
+    const { workflowId } = req.params;
+    if (!isHotelOffersWorkflowId(workflowId)) {
+      res.status(400).json({ error: 'Not a hotel offers workflow id' });
+      return;
+    }
+    const run = await getWorkflowRun(deps.client, workflowId);
+    if (!run) {
+      res.status(404).json({ error: 'Workflow not found' });
+      return;
+    }
+    res.json(run);
   });
 
   app.get('/health', async (_req, res) => {

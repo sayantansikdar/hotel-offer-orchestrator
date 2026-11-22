@@ -4,6 +4,7 @@ import { ApplicationFailure, WorkflowFailedError } from '@temporalio/client';
 import { TestWorkflowEnvironment } from '@temporalio/testing';
 import { Runtime, DefaultLogger, Worker } from '@temporalio/worker';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { toTimeline } from '../src/api/workflow-runs';
 import type { Activities } from '../src/temporal/activities';
 import { hotelOffersWorkflow } from '../src/temporal/workflows';
 import type { HotelOffer, SupplierId } from '../src/types';
@@ -58,14 +59,15 @@ async function run({ down = [], cacheDown = false }: Scenario) {
     activities,
   });
 
+  const workflowId = `wf-${randomUUID()}`;
   const result = worker.runUntil(
     env.client.workflow.execute(hotelOffersWorkflow, {
       taskQueue,
-      workflowId: `wf-${randomUUID()}`,
+      workflowId,
       args: [{ city: 'delhi' }],
     }),
   );
-  return { result, calls, cached };
+  return { result, calls, cached, workflowId };
 }
 
 describe('hotelOffersWorkflow', () => {
@@ -108,5 +110,22 @@ describe('hotelOffersWorkflow', () => {
 
     expect(offers).toHaveLength(3);
     expect(cached).toBe(false);
+  });
+
+  it('maps the run history to a readable timeline, including retries', async () => {
+    const { result, workflowId } = await run({ down: ['B'] });
+    await result;
+    const history = await env.client.workflow.getHandle(workflowId).fetchHistory();
+    const { events, result: summary } = toTimeline(history.events ?? []);
+    const titles = events.map((e) => e.title);
+
+    expect(titles[0]).toBe('Workflow started');
+    expect(titles).toContain('Fetch Supplier A completed');
+    expect(titles).toContain('Fetch Supplier B — attempt 3');
+    expect(titles).toContain('Fetch Supplier B failed');
+    expect(titles.at(-1)).toBe('Workflow completed');
+    expect(events.find((e) => e.title === 'Fetch Supplier A completed')?.detail).toBe('2 hotels');
+    expect(events.find((e) => e.title === 'Fetch Supplier B — attempt 3')?.detail).toContain('HTTP 503');
+    expect(summary).toMatchObject({ hotels: 2, cached: true });
   });
 });

@@ -127,3 +127,25 @@ describe('mock suppliers', () => {
     expect((await fetch(`${baseUrl}/supplierA/hotels`)).status).toBe(200);
   });
 });
+
+describe('browser access', () => {
+  it('allows cross-origin calls and exposes the custom headers', async () => {
+    const res = await fetch(`${baseUrl}/api/hotels?city=delhi`, { headers: { Origin: 'https://example.github.io' } });
+    expect(res.headers.get('access-control-allow-origin')).toBe('*');
+    expect(res.headers.get('access-control-expose-headers')).toContain('X-Suppliers-Unavailable');
+  });
+
+  it('answers preflight requests', async () => {
+    const res = await fetch(`${baseUrl}/supplierB/outage`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://example.github.io', 'Access-Control-Request-Method': 'DELETE' },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-methods')).toContain('DELETE');
+  });
+
+  it('rejects workflow ids that are not hotel offer runs', async () => {
+    const res = await fetch(`${baseUrl}/api/workflows/some-other-workflow`);
+    expect(res.status).toBe(400);
+  });
+});

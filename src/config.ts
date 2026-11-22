@@ -21,6 +21,7 @@ export const config = {
   cacheTtlSeconds: int(process.env.CACHE_TTL_SECONDS, 300),
   // Results missing a supplier expire sooner, so the cache recovers with the supplier.
   partialCacheTtlSeconds: int(process.env.PARTIAL_CACHE_TTL_SECONDS, 30),
+  corsOrigins: (process.env.CORS_ORIGINS ?? '*').split(',').map((o) => o.trim()).filter(Boolean),
   supplierADown: bool(process.env.SUPPLIER_A_DOWN),
   supplierBDown: bool(process.env.SUPPLIER_B_DOWN),
 };

@@ -18,6 +18,7 @@ const app = createApp({
   cache,
   supplierBaseUrl: config.supplierBaseUrl,
   hotelOffers: new HotelOffersService(client, cache, config.temporal.taskQueue),
+  corsOrigins: config.corsOrigins,
 });
 
 const server = app.listen(config.port, () => {
