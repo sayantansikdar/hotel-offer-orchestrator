@@ -4,7 +4,8 @@ Aggregates hotel offers from two suppliers, keeps the cheapest offer per hotel, 
 
 **Stack:** Node.js 22 · TypeScript · Express 5 · Temporal · Redis · Docker Compose
 
-**Live demo:** <https://hotel-offer-orchestrator-y8rq.onrender.com/api/hotels?city=delhi> · [health](https://hotel-offer-orchestrator-y8rq.onrender.com/health). It runs on Render's free tier, which sleeps when idle, so the first request after a pause can take about a minute.
+**Live console:** <https://sayantansikdar.github.io/hotel-offer-orchestrator/>. Search hotels, switch suppliers off and on, and trace every Temporal workflow run on a timeline.
+**Live API:** <https://hotel-offer-orchestrator-y8rq.onrender.com/api/hotels?city=delhi> · [health](https://hotel-offer-orchestrator-y8rq.onrender.com/health). It runs on Render's free tier, which sleeps when idle, so the first request after a pause can take about a minute.
 
 ```
                       ┌──────────────────────────── api (Express) ────────────────────────────┐
@@ -128,6 +129,27 @@ Inventory lives in [`src/suppliers/data.ts`](src/suppliers/data.ts):
 
 To start with a supplier already down, run `SUPPLIER_B_DOWN=true docker compose up -d`.
 
+### `GET /api/workflows` and `GET /api/workflows/:workflowId`
+
+Read-only views of the Temporal runs, used by the web console.
+
+- `GET /api/workflows?limit=20` lists recent `hotelOffersWorkflow` runs with their status and duration.
+- `GET /api/workflows/:workflowId` returns one run's history as a short timeline: activities scheduled, retry attempts with the previous error, completions, failures, and the result summary. Raw payloads are decoded on the server, so the Temporal server itself is never exposed.
+
+The API sends CORS headers (`CORS_ORIGINS`, default `*`) and exposes `X-Cache`, `X-Workflow-Id` and `X-Suppliers-Unavailable` to browsers.
+
+## Web console
+
+[`web/`](web) is a static, dependency-free console published to GitHub Pages by [`.github/workflows/pages.yml`](.github/workflows/pages.yml). It covers:
+
+- **Search:** pick a city and an optional price range. Each result shows both suppliers' prices side by side and how much the chosen offer saves.
+- **Suppliers:** switch either supplier off or on. This calls the mock outage endpoints, and live health shows next to each switch.
+- **Workflows:** a list of recent runs. For the selected run it shows a bar per activity (failed retries are striped red) and the full event history.
+
+The page uses translucent "glass" panels with a light highlight that follows the pointer, and supports dark mode, reduced motion, and reduced transparency.
+
+It calls the API set in [`web/config.js`](web/config.js). To point it at a local stack, add `?api=http://localhost:3000` to the page URL, for example `cd web && python3 -m http.server 8080`, then open `http://localhost:8080/?api=http://localhost:3000`.
+
 ## How it works
 
 **Workflow** ([`src/temporal/workflows.ts`](src/temporal/workflows.ts)): `hotelOffersWorkflow` calls the `fetchSupplierHotels` activity for both suppliers in parallel with `Promise.allSettled`, so one failure never cancels the other call.
@@ -214,6 +236,7 @@ npm run dev:worker                   # terminal 2
 | `CACHE_TTL_SECONDS` | `300` | TTL for a complete result |
 | `PARTIAL_CACHE_TTL_SECONDS` | `30` | TTL when a supplier was unavailable |
 | `SUPPLIER_A_DOWN` / `SUPPLIER_B_DOWN` | `false` | Start with a supplier simulated as down |
+| `CORS_ORIGINS` | `*` | Comma-separated origins allowed to call the API from a browser |
 | `LOG_LEVEL` | `info` | pino level |
 
 ## Deployment
@@ -254,7 +277,8 @@ Workers scale horizontally. Every worker polls the same task queue, so you can a
 ```
 src/
   api/          server.ts (entry), app.ts (routes, validation, error mapping),
-                hotel-offers-service.ts (workflow + cache logic), health.ts
+                hotel-offers-service.ts (workflow + cache logic), health.ts,
+                workflow-runs.ts (run list + readable history for the console)
   temporal/     workflows.ts, activities.ts, worker.ts (entry),
                 bundle.ts (pre-bundles workflow code at build time)
   suppliers/    router.ts (mock endpoints + outage switch), data.ts (inventory)
@@ -262,6 +286,7 @@ src/
   config.ts, types.ts
 test/           vitest suites
 postman/        Postman collection
+web/            static web console (GitHub Pages)
 deploy/         single-container image and start script for Render
 render.yaml     Render blueprint
 ```
