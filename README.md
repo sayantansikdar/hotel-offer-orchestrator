@@ -4,6 +4,8 @@ Aggregates hotel offers from two suppliers, keeps the cheapest offer per hotel, 
 
 **Stack:** Node.js 22 · TypeScript · Express 5 · Temporal · Redis · Docker Compose
 
+**Live demo:** <https://hotel-offer-orchestrator-y8rq.onrender.com/api/hotels?city=delhi> · [health](https://hotel-offer-orchestrator-y8rq.onrender.com/health). It runs on Render's free tier, which sleeps when idle, so the first request after a pause can take about a minute.
+
 ```
                       ┌──────────────────────────── api (Express) ────────────────────────────┐
  GET /api/hotels ───▶ │ validate query ──▶ start workflow ──────────────▶ JSON array         │
@@ -169,7 +171,7 @@ npm test                 # vitest: dedupe rules, workflow, HTTP layer
 - `test/workflow.test.ts` runs the real workflow on a local Temporal test server with stubbed activities. It covers both suppliers up, one supplier failing (retried 3 times, then a partial result), both failing, and the Redis write failing. The first run downloads the Temporal test server.
 - `test/api.test.ts` covers query validation, routing to the Redis path, status code mapping and the mock supplier outage switch.
 
-**Postman:** import [`postman/hotel-offer-orchestrator.postman_collection.json`](postman/hotel-offer-orchestrator.postman_collection.json) and set `baseUrl` (default `http://localhost:3000`). Run the folders in order, because folder 5 takes suppliers down and brings them back. The collection has 23 requests and 57 assertions, covering:
+**Postman:** import [`postman/hotel-offer-orchestrator.postman_collection.json`](postman/hotel-offer-orchestrator.postman_collection.json) and set `baseUrl` (default `http://localhost:3000`, or `https://hotel-offer-orchestrator-y8rq.onrender.com` for the live demo). Run the folders in order, because folder 5 takes suppliers down and brings them back. The collection has 23 requests and 57 assertions, covering:
 
 - health
 - the mock suppliers and their overlap
@@ -239,7 +241,7 @@ curl http://<host>:3000/health
 
 1. Fork or push this repo to GitHub.
 2. In the Render dashboard, choose **New → Blueprint** and pick the repo. Render reads [`render.yaml`](render.yaml) and creates the `hotel-offer-orchestrator` web service.
-3. Once the deploy finishes, open `https://<service>.onrender.com/health`.
+3. Once the deploy finishes, open `https://<service>.onrender.com/health`. This repo's own deployment is at <https://hotel-offer-orchestrator-y8rq.onrender.com>.
 
 On the free plan the service sleeps after 15 minutes without traffic, so the first request after a pause takes about a minute while it wakes up. Temporal and Redis run in memory, so their state resets on every restart or deploy. That's fine here, because a request rebuilds the cache from the suppliers.
 

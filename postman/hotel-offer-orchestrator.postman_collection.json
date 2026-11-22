@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "da1c4feb-dd96-44e7-ade0-558a8c232bde",
     "name": "Hotel Offer Orchestrator",
-    "description": "Tests for the hotel offer API. Set `baseUrl` (default http://localhost:3000). Run the folders in order: the outage folder takes suppliers down and brings them back.",
+    "description": "Tests for the hotel offer API. Set `baseUrl` (default http://localhost:3000; live demo: https://hotel-offer-orchestrator-y8rq.onrender.com). Run the folders in order: the outage folder takes suppliers down and brings them back.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
